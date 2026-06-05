@@ -1,7 +1,8 @@
-import { useEffect, useReducer, useCallback, useRef } from 'react'
+import { useEffect, useReducer, useCallback, useRef, useState } from 'react'
 import { historyReducer, initialHistory, type ObjectMap } from '../lib/history'
 import { loadObjects, saveObject, softDeleteObject, clearBoard } from '../lib/objects'
 import type { BoardObject } from '../lib/types'
+import { joinBoard, type BoardChannel } from '../lib/realtime'
 
 export function useBoardObjects(boardId: string | null) {
   const [hist, dispatch] = useReducer(historyReducer, undefined, initialHistory)
@@ -10,15 +11,33 @@ export function useBoardObjects(boardId: string | null) {
   const histRef = useRef(hist)
   useEffect(() => { histRef.current = hist }, [hist])
 
+  const chan = useRef<BoardChannel | null>(null)
+  const [liveDrafts, setLiveDrafts] = useState<Record<string, BoardObject>>({})
+
   useEffect(() => {
     if (!boardId) return
     let alive = true
+    setLiveDrafts({})
     loadObjects(boardId).then(rows => {
       if (!alive) return
       const map: ObjectMap = {}; rows.forEach(r => (map[r.id] = r))
       dispatch({ kind: 'reset', objects: map })
     }).catch(console.error)
-    return () => { alive = false }
+
+    chan.current = joinBoard(boardId, {
+      onLive: m => setLiveDrafts(d => ({ ...d, [m.id]: { id: m.id, board_id: boardId, owner_id: '', type: m.type, data: m.data, updated_at: '', deleted: false } })),
+      onCommit: o => {
+        setLiveDrafts(d => { const n = { ...d }; delete n[o.id]; return n })
+        dispatch({ kind: 'sync', objects: { ...histRef.current.present, [o.id]: o } })
+      },
+      onDelete: id => {
+        setLiveDrafts(d => { const n = { ...d }; delete n[id]; return n })
+        const next = { ...histRef.current.present }; delete next[id]
+        dispatch({ kind: 'sync', objects: next })
+      },
+    })
+
+    return () => { alive = false; chan.current?.leave(); chan.current = null }
   }, [boardId])
 
   const persistDiff = (before: ObjectMap, after: ObjectMap) => {
@@ -64,5 +83,5 @@ export function useBoardObjects(boardId: string | null) {
   }, [])
 
   const objects = Object.values(hist.present)
-  return { objects, commit, update, remove, clear, undo, redo, dispatch, hist }
+  return { objects, commit, update, remove, clear, undo, redo, dispatch, hist, channel: chan, liveDrafts }
 }

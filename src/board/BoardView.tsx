@@ -7,11 +7,19 @@ import { useBoardObjects } from './useBoardObjects'
 import { useBoards } from './useBoards'
 import { useAuth } from '../auth/AuthProvider'
 import { newId, type BoardObject, type ObjectType } from '../lib/types'
+import { type BoardChannel } from '../lib/realtime'
+
+let lastSent = 0
+function throttledSendPoints(ch: BoardChannel | null, o: BoardObject) {
+  if (!ch) return
+  const now = performance.now()
+  if (now - lastSent > 33) { lastSent = now; ch.sendPoints(o.id, o.type, o.data) }
+}
 
 export function BoardView() {
   const { user, signOut } = useAuth()
   const { boards, activeId, setActiveId, addBoard, rename, remove } = useBoards(user!.id)
-  const { objects, commit, update, remove: removeObj, clear, undo, redo } = useBoardObjects(activeId)
+  const { objects, commit, update, remove: removeObj, clear, undo, redo, channel, liveDrafts } = useBoardObjects(activeId)
   const t = useTool()
   const [showGrid, setShowGrid] = useState(true)
   const [size, setSize] = useState({ w: window.innerWidth, h: window.innerHeight - 88 })
@@ -37,22 +45,43 @@ export function BoardView() {
   const down = (x: number, y: number) => {
     if (!activeId) return
     if (t.tool === 'pen') draft.current = base('stroke', { points: [x, y], color: t.color, size: t.size })
-    else if (t.tool === 'eraser') { const hit = hitTest(x, y); if (hit) removeObj(hit.id); return }
+    else if (t.tool === 'eraser') {
+      const hit = hitTest(x, y)
+      if (hit) { removeObj(hit.id); channel.current?.sendDelete(hit.id) }
+      return
+    }
     else if (t.tool === 'text') {
-      const text = window.prompt('Text:'); if (text) commit(base('text', { x, y, text, color: t.color, fontSize: 20 })); return
+      const text = window.prompt('Text:')
+      if (text) {
+        const o = base('text', { x, y, text, color: t.color, fontSize: 20 })
+        commit(o)
+        channel.current?.sendCommit(o)
+      }
+      return
     } else if (t.tool === 'select') { return }
     else { origin.current = { x, y }; draft.current = base(t.tool, shapeData(t.tool, x, y, x, y, t.color, t.size)) }
     force(n => n + 1)
   }
   const move = (x: number, y: number) => {
-    if (t.tool === 'eraser') { const hit = hitTest(x, y); if (hit) removeObj(hit.id); return }
+    if (t.tool === 'eraser') {
+      const hit = hitTest(x, y)
+      if (hit) { removeObj(hit.id); channel.current?.sendDelete(hit.id) }
+      return
+    }
     const d = draft.current; if (!d) return
     if (d.type === 'stroke') { (d.data as { points: number[] }).points.push(x, y) }
     else if (origin.current) { d.data = shapeData(d.type, origin.current.x, origin.current.y, x, y, t.color, t.size) }
+    throttledSendPoints(channel.current, d)
     force(n => n + 1)
   }
   const up = () => {
-    if (draft.current) { commit(draft.current); draft.current = null; origin.current = null; force(n => n + 1) }
+    if (draft.current) {
+      const d = draft.current
+      commit(d)
+      channel.current?.sendCommit(d)
+      draft.current = null; origin.current = null; force(n => n + 1)
+    }
+    // v1: undo/redo not broadcast
   }
 
   const hitTest = (x: number, y: number) =>
@@ -61,12 +90,14 @@ export function BoardView() {
   const onTransform = (id: string, patch: Partial<BoardObject['data']>) => {
     const o = objects.find(x => x.id === id)
     if (!o) return
-    update({ ...o, data: { ...o.data, ...patch } })
+    const updated: BoardObject = { ...o, data: { ...o.data, ...patch } }
+    update(updated)
+    channel.current?.sendCommit(updated)
   }
 
   const onFullscreen = () => document.documentElement.requestFullscreen?.()
 
-  const render = draft.current ? [...objects, draft.current] : objects
+  const render = [...objects, ...Object.values(liveDrafts), ...(draft.current ? [draft.current] : [])]
   return (
     <div className="app">
       <TabBar boards={boards} activeId={activeId} onSelect={setActiveId}
