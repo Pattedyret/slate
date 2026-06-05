@@ -1,10 +1,14 @@
-import { useEffect, useReducer, useCallback } from 'react'
+import { useEffect, useReducer, useCallback, useRef } from 'react'
 import { historyReducer, initialHistory, type ObjectMap } from '../lib/history'
 import { loadObjects, saveObject, softDeleteObject, clearBoard } from '../lib/objects'
 import type { BoardObject } from '../lib/types'
 
 export function useBoardObjects(boardId: string | null) {
   const [hist, dispatch] = useReducer(historyReducer, undefined, initialHistory)
+
+  // Mirror reducer state into a ref so callbacks always read fresh state
+  const histRef = useRef(hist)
+  useEffect(() => { histRef.current = hist }, [hist])
 
   useEffect(() => {
     if (!boardId) return
@@ -17,8 +21,22 @@ export function useBoardObjects(boardId: string | null) {
     return () => { alive = false }
   }, [boardId])
 
+  const persistDiff = (before: ObjectMap, after: ObjectMap) => {
+    const ids = new Set([...Object.keys(before), ...Object.keys(after)])
+    ids.forEach(id => {
+      const b = before[id], a = after[id]
+      if (a && a !== b) saveObject(a).catch(console.error)          // added or changed
+      else if (b && !a) softDeleteObject(id).catch(console.error)   // removed
+    })
+  }
+
   const commit = useCallback((o: BoardObject) => {
     dispatch({ kind: 'add', object: o })
+    saveObject(o).catch(console.error)
+  }, [])
+
+  const update = useCallback((o: BoardObject) => {
+    dispatch({ kind: 'update', object: o })
     saveObject(o).catch(console.error)
   }, [])
 
@@ -33,6 +51,18 @@ export function useBoardObjects(boardId: string | null) {
     clearBoard(boardId).catch(console.error)
   }, [boardId])
 
+  const undo = useCallback(() => {
+    const next = historyReducer(histRef.current, { kind: 'undo' })
+    persistDiff(histRef.current.present, next.present)
+    dispatch({ kind: 'undo' })
+  }, [])
+
+  const redo = useCallback(() => {
+    const next = historyReducer(histRef.current, { kind: 'redo' })
+    persistDiff(histRef.current.present, next.present)
+    dispatch({ kind: 'redo' })
+  }, [])
+
   const objects = Object.values(hist.present)
-  return { objects, commit, remove, clear, dispatch, hist }
+  return { objects, commit, update, remove, clear, undo, redo, dispatch, hist }
 }

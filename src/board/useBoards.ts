@@ -26,10 +26,10 @@ export function useBoards(ownerId: string) {
     await deleteBoard(id)
     setBoards(bs => {
       const next = bs.filter(b => b.id !== id)
-      setActiveId(a => (a === id ? next[0]?.id ?? null : a))
       return next
     })
-  }, [])
+    setActiveId(a => (a === id ? (boards.filter(b => b.id !== id)[0]?.id ?? null) : a))
+  }, [boards])
 
   return { boards, activeId, setActiveId, addBoard, rename, remove }
 }

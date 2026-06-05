@@ -7,6 +7,7 @@ export type Action =
   | { kind: 'update'; object: BoardObject }
   | { kind: 'remove'; id: string }
   | { kind: 'reset'; objects: ObjectMap }
+  | { kind: 'sync'; objects: ObjectMap }
   | { kind: 'undo' }
   | { kind: 'redo' }
 
@@ -26,6 +27,8 @@ export function historyReducer(s: HistoryState, a: Action): HistoryState {
       return commit(s, next)
     }
     case 'reset':
+      return { past: [], present: a.objects, future: [] }
+    case 'sync':
       return { ...s, present: a.objects }
     case 'undo': {
       if (!s.past.length) return s

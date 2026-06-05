@@ -26,6 +26,8 @@ function GridDots({ w, h }: { w: number; h: number }) {
   return <>{dots}</>
 }
 
+const RESIZE_TYPES = new Set(['rect', 'ellipse'])
+
 export function Canvas({
   width, height, objects, showGrid,
   onPointerDown, onPointerMove, onPointerUp,
@@ -33,6 +35,9 @@ export function Canvas({
 }: Props) {
   const transformerRef = useRef<Konva.Transformer>(null)
   const layerRef = useRef<Konva.Layer>(null)
+
+  const selectedObj = selectedId ? objects.find(o => o.id === selectedId) : undefined
+  const isResizable = selectedObj ? RESIZE_TYPES.has(selectedObj.type) : false
 
   // Attach Transformer to the selected node whenever selectedId changes
   useEffect(() => {
@@ -120,6 +125,9 @@ export function Canvas({
                     const newPoints = d.points.map((v, i) => i % 2 === 0 ? v + dx : v + dy)
                     onTransform?.(o.id, { points: newPoints })
                   },
+                  onTransformEnd: (e: Konva.KonvaEventObject<Event>) => {
+                    const n = e.target; n.scaleX(1); n.scaleY(1); n.rotation(0)
+                  },
                 }
               : {}
             return (
@@ -147,6 +155,9 @@ export function Canvas({
                     // Points are absolute coords inside Konva — reset position and translate endpoints
                     node.position({ x: 0, y: 0 })
                     onTransform?.(o.id, { x1: d.x1 + dx, y1: d.y1 + dy, x2: d.x2 + dx, y2: d.y2 + dy })
+                  },
+                  onTransformEnd: (e: Konva.KonvaEventObject<Event>) => {
+                    const n = e.target; n.scaleX(1); n.scaleY(1); n.rotation(0)
                   },
                 }
               : {}
@@ -195,6 +206,7 @@ export function Canvas({
                     const newH = Math.abs(node.height() * scaleY)
                     node.scaleX(1)
                     node.scaleY(1)
+                    node.rotation(0)
                     onTransform?.(o.id, { x: node.x(), y: node.y(), w: newW, h: newH })
                   },
                 }
@@ -235,6 +247,7 @@ export function Canvas({
                     const newRy = Math.abs(node.radiusY() * scaleY)
                     node.scaleX(1)
                     node.scaleY(1)
+                    node.rotation(0)
                     const newW = newRx * 2
                     const newH = newRy * 2
                     // node.x()/y() is still the center after transform — convert back to top-left
@@ -266,6 +279,9 @@ export function Canvas({
                     const node = e.target
                     onTransform?.(o.id, { x: node.x(), y: node.y() })
                   },
+                  onTransformEnd: (e: Konva.KonvaEventObject<Event>) => {
+                    const n = e.target; n.scaleX(1); n.scaleY(1); n.rotation(0)
+                  },
                 }
               : {}
             return (
@@ -285,7 +301,15 @@ export function Canvas({
 
           return null
         })}
-        {selectable && <Transformer ref={transformerRef} />}
+        {selectable && (
+          <Transformer
+            ref={transformerRef}
+            rotateEnabled={false}
+            enabledAnchors={isResizable
+              ? ['top-left', 'top-center', 'top-right', 'middle-right', 'bottom-right', 'bottom-center', 'bottom-left', 'middle-left']
+              : []}
+          />
+        )}
       </Layer>
     </Stage>
   )

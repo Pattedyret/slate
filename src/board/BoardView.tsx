@@ -11,7 +11,7 @@ import { newId, type BoardObject, type ObjectType } from '../lib/types'
 export function BoardView() {
   const { user, signOut } = useAuth()
   const { boards, activeId, setActiveId, addBoard, rename, remove } = useBoards(user!.id)
-  const { objects, commit, remove: removeObj, clear, dispatch } = useBoardObjects(activeId)
+  const { objects, commit, update, remove: removeObj, clear, undo, redo } = useBoardObjects(activeId)
   const t = useTool()
   const [showGrid, setShowGrid] = useState(true)
   const [size, setSize] = useState({ w: window.innerWidth, h: window.innerHeight - 88 })
@@ -31,7 +31,7 @@ export function BoardView() {
   }, [t.tool])
 
   const base = (type: ObjectType, data: BoardObject['data']): BoardObject => ({
-    id: newId(), board_id: activeId!, owner_id: user!.id, type, data, updated_at: '', deleted: false,
+    id: newId(), board_id: activeId!, owner_id: user!.id, type, data, updated_at: new Date().toISOString(), deleted: false,
   })
 
   const down = (x: number, y: number) => {
@@ -45,6 +45,7 @@ export function BoardView() {
     force(n => n + 1)
   }
   const move = (x: number, y: number) => {
+    if (t.tool === 'eraser') { const hit = hitTest(x, y); if (hit) removeObj(hit.id); return }
     const d = draft.current; if (!d) return
     if (d.type === 'stroke') { (d.data as { points: number[] }).points.push(x, y) }
     else if (origin.current) { d.data = shapeData(d.type, origin.current.x, origin.current.y, x, y, t.color, t.size) }
@@ -60,7 +61,7 @@ export function BoardView() {
   const onTransform = (id: string, patch: Partial<BoardObject['data']>) => {
     const o = objects.find(x => x.id === id)
     if (!o) return
-    commit({ ...o, data: { ...o.data, ...patch } })
+    update({ ...o, data: { ...o.data, ...patch } })
   }
 
   const onFullscreen = () => document.documentElement.requestFullscreen?.()
@@ -71,7 +72,7 @@ export function BoardView() {
       <TabBar boards={boards} activeId={activeId} onSelect={setActiveId}
         onAdd={addBoard} onRename={rename} onDelete={remove} onSignOut={signOut} />
       <Toolbar {...t} showGrid={showGrid} toggleGrid={() => setShowGrid(g => !g)}
-        onUndo={() => dispatch({ kind: 'undo' })} onRedo={() => dispatch({ kind: 'redo' })}
+        onUndo={undo} onRedo={redo}
         onClear={clear} onFullscreen={onFullscreen} />
       <Canvas width={size.w} height={size.h} objects={render} showGrid={showGrid}
         onPointerDown={down} onPointerMove={move} onPointerUp={up}
