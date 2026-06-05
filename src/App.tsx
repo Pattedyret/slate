@@ -1,3 +1,9 @@
+import { useAuth } from './auth/AuthProvider'
+import { LoginScreen } from './auth/LoginScreen'
+import { BoardView } from './board/BoardView'
+
 export default function App() {
-  return <h1>Slate</h1>
+  const { user, loading } = useAuth()
+  if (loading) return <div className="center">Loading…</div>
+  return user ? <BoardView /> : <LoginScreen />
 }
