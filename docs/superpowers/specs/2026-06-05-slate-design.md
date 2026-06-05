@@ -111,9 +111,12 @@ would be slow and blow free-tier limits. So we split into two tiers:
 1. **In-flight (while the finger is down)** → points stream over a **per-board Supabase
    Realtime _broadcast_ channel**, throttled and batched (multiple points per message).
    *This never touches the database.* Other devices render these live.
-2. **On finger-up (object committed)** → the finished object is written **once** to the
-   `objects` table for durability. Committed changes propagate to other devices (via
-   broadcast and/or `postgres_changes`).
+2. **On finger-up (object committed)** → the finished object is (a) broadcast once on the
+   same per-board channel as a `commit` message so other live devices finalize it, and
+   (b) written **once** to the `objects` table for durability. **Default: one mechanism —
+   the broadcast channel** carries both in-flight points and the final commit; the DB is
+   written for persistence and read only on open. (`postgres_changes` is a fallback we can
+   add if broadcast delivery proves unreliable.)
 3. **On board open** → a device reads that board's objects from the DB **once** to
    rebuild the current picture, then listens for live updates.
 
