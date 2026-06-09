@@ -5,6 +5,7 @@ export interface BoardChannel {
   sendPoints: (id: string, type: BoardObject['type'], data: unknown) => void
   sendCommit: (object: BoardObject) => void
   sendDelete: (id: string) => void
+  sendClear: () => void
   leave: () => void
 }
 
@@ -14,6 +15,7 @@ export function joinBoard(
     onLive: (msg: { id: string; type: BoardObject['type']; data: any }) => void
     onCommit: (o: BoardObject) => void
     onDelete: (id: string) => void
+    onClear: () => void
   },
 ): BoardChannel {
   const channel = supabase.channel(`board:${boardId}`, { config: { broadcast: { self: false } } })
@@ -21,6 +23,7 @@ export function joinBoard(
     .on('broadcast', { event: 'live' },   ({ payload }) => handlers.onLive(payload))
     .on('broadcast', { event: 'commit' }, ({ payload }) => handlers.onCommit(payload))
     .on('broadcast', { event: 'delete' }, ({ payload }) => handlers.onDelete(payload.id))
+    .on('broadcast', { event: 'clear' },  () => handlers.onClear())
     .subscribe()
 
   const send = (event: string, payload: unknown) => channel.send({ type: 'broadcast', event, payload })
@@ -28,6 +31,7 @@ export function joinBoard(
     sendPoints: (id, type, data) => send('live', { id, type, data }),
     sendCommit: (object) => send('commit', object),
     sendDelete: (id) => send('delete', { id }),
+    sendClear: () => send('clear', {}),
     leave: () => { supabase.removeChannel(channel) },
   }
 }
