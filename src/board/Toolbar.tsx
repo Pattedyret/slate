@@ -7,7 +7,11 @@ interface Props {
   color: string; setColor: (c: string) => void
   size: number; setSize: (n: number) => void
   showGrid: boolean; toggleGrid: () => void
-  onUndo: () => void; onRedo: () => void; onClear: () => void; onFullscreen: () => void
+  onUndo: () => void; onRedo: () => void; onClear: () => void
+  // Fullscreen toggle reflects state; hidden where the API is unavailable (iOS).
+  isFs: boolean; onToggleFullscreen: () => void; fullscreenSupported: boolean
+  // Collapse the top menu (tab bar + toolbar).
+  onCollapseMenu: () => void
 }
 
 export function Toolbar(p: Props) {
@@ -27,7 +31,17 @@ export function Toolbar(p: Props) {
       <button onClick={p.onRedo}>redo</button>
       <button onClick={p.onClear}>clear</button>
       <button className={p.showGrid ? 'active' : ''} onClick={p.toggleGrid}>grid</button>
-      <button onClick={p.onFullscreen}>⤢</button>
+      {p.fullscreenSupported && (
+        <button
+          className={p.isFs ? 'active' : ''}
+          onClick={p.onToggleFullscreen}
+          aria-label={p.isFs ? 'Exit fullscreen' : 'Enter fullscreen'}
+          title={p.isFs ? 'Exit fullscreen' : 'Enter fullscreen'}
+        >
+          {p.isFs ? '⤡' : '⤢'}
+        </button>
+      )}
+      <button onClick={p.onCollapseMenu} aria-label="Hide menu" title="Hide menu">⌃</button>
     </div>
   )
 }
