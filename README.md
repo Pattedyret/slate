@@ -46,7 +46,7 @@ app renders a setup screen instead of crashing.
 ## Test
 
 ```bash
-npm test                 # Vitest unit tests (history reducer, type round-trip)
+npx vitest run           # Vitest unit tests (history reducer, type round-trip)
 npx playwright test      # e2e: RLS account isolation + live draw-sync (needs .env)
 ```
 

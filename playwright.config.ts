@@ -16,6 +16,9 @@ try {
 
 export default defineConfig({
   testDir: './tests/e2e',
+  // Only *.spec.ts are Playwright tests. Unit tests (tests/*.test.ts) belong to Vitest,
+  // which in turn only includes *.test.ts (see vite.config.ts) — so the two never overlap.
+  testMatch: ['**/*.spec.ts'],
   timeout: 45_000,
   expect: { timeout: 15_000 },
   fullyParallel: false,

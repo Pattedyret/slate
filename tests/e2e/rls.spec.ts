@@ -47,8 +47,12 @@ test('RLS isolates accounts: user B cannot read user A boards or objects', async
   expect(aObjs).toHaveLength(1)
 
   // B is a different account. RLS must hide A's rows entirely.
-  const { error: bSignErr } = await B.auth.signUp({ email: rnd(), password: PW })
+  const { data: bSign, error: bSignErr } = await B.auth.signUp({ email: rnd(), password: PW })
   expect(bSignErr, bSignErr?.message).toBeNull()
+  // Assert B is a genuine *authenticated* user — not an anonymous client. Otherwise, if email
+  // confirmation were ever re-enabled, this test would silently degrade to "anon is blocked"
+  // rather than proving "a different signed-in user is blocked" (the real guarantee).
+  expect(bSign.session, 'B must have a session (authenticated, not anonymous)').toBeTruthy()
 
   const { data: bBoards } = await B.from('boards').select('*').eq('id', board!.id)
   const { data: bObjs } = await B.from('objects').select('*').eq('board_id', board!.id)
