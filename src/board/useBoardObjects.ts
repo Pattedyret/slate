@@ -35,18 +35,38 @@ export function useBoardObjects(boardId: string | null) {
         const next = { ...histRef.current.present }; delete next[id]
         dispatch({ kind: 'sync', objects: next })
       },
+      onClear: () => {
+        setLiveDrafts({})                          // drop any in-flight remote points
+        dispatch({ kind: 'sync', objects: {} })    // replace present; keep past/future
+      },
     })
 
     return () => { alive = false; chan.current?.leave(); chan.current = null }
   }, [boardId])
 
-  const persistDiff = (before: ObjectMap, after: ObjectMap) => {
+  // Pure: classify a before→after change into commits (added/changed) and deletes (removed).
+  const diffObjects = (before: ObjectMap, after: ObjectMap) => {
     const ids = new Set([...Object.keys(before), ...Object.keys(after)])
+    const commits: BoardObject[] = []
+    const deletes: string[] = []
     ids.forEach(id => {
       const b = before[id], a = after[id]
-      if (a && a !== b) saveObject(a).catch(console.error)          // added or changed
-      else if (b && !a) softDeleteObject(id).catch(console.error)   // removed
+      if (a && a !== b) commits.push(a)        // added or changed
+      else if (b && !a) deletes.push(id)       // removed
     })
+    return { commits, deletes }
+  }
+
+  const persistDiff = (before: ObjectMap, after: ObjectMap) => {
+    const { commits, deletes } = diffObjects(before, after)
+    commits.forEach(o => saveObject(o).catch(console.error))
+    deletes.forEach(id => softDeleteObject(id).catch(console.error))
+  }
+
+  const broadcastDiff = (before: ObjectMap, after: ObjectMap) => {
+    const { commits, deletes } = diffObjects(before, after)
+    commits.forEach(o => chan.current?.sendCommit(o))
+    deletes.forEach(id => chan.current?.sendDelete(id))
   }
 
   const commit = useCallback((o: BoardObject) => {
@@ -68,17 +88,20 @@ export function useBoardObjects(boardId: string | null) {
     if (!boardId) return
     dispatch({ kind: 'reset', objects: {} })
     clearBoard(boardId).catch(console.error)
+    chan.current?.sendClear()
   }, [boardId])
 
   const undo = useCallback(() => {
     const next = historyReducer(histRef.current, { kind: 'undo' })
     persistDiff(histRef.current.present, next.present)
+    broadcastDiff(histRef.current.present, next.present)
     dispatch({ kind: 'undo' })
   }, [])
 
   const redo = useCallback(() => {
     const next = historyReducer(histRef.current, { kind: 'redo' })
     persistDiff(histRef.current.present, next.present)
+    broadcastDiff(histRef.current.present, next.present)
     dispatch({ kind: 'redo' })
   }, [])
 
