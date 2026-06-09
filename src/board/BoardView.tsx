@@ -2,7 +2,7 @@ import { useRef, useState, useEffect, useCallback } from 'react'
 import { Canvas, LONGPRESS_MOVE_PX, type SlatePointerInfo } from './Canvas'
 import { Toolbar } from './Toolbar'
 import { TabBar } from './TabBar'
-import { useTool } from './useTool'
+import { useTool, clampFontSize } from './useTool' // (C) clampFontSize for the dual-bound patch
 import { useBoardObjects } from './useBoardObjects'
 import { useBoards } from './useBoards'
 import { useElementSize } from './useElementSize'
@@ -10,8 +10,12 @@ import { useViewport } from './useViewport'
 import { useLongPress } from './useLongPress' // (D)
 import { RadialMenu } from './RadialMenu' // (D)
 import { worldToScreen } from './viewport-math' // (D)
+import { TextEditOverlay, type TextEditState } from './TextEditOverlay' // (C)
 import { useAuth } from '../auth/AuthProvider'
-import { newId, type BoardObject, type ObjectType } from '../lib/types'
+import {
+  newId, type BoardObject, type ObjectType,
+  type StrokeData, type SegData, type RectData, type TextData, // (C) for the onTransform patch type
+} from '../lib/types'
 import { type BoardChannel } from '../lib/realtime'
 
 let lastSent = 0
@@ -38,6 +42,7 @@ export function BoardView() {
   const { ref: wrapRef, size } = useElementSize<HTMLDivElement>()
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null) // (D) radial menu screen point
+  const [editor, setEditor] = useState<TextEditState | null>(null) // (C) open text-edit overlay
   const [menuHidden, setMenuHidden] = useState(false)
   const [isFs, setIsFs] = useState(false)
   const appRef = useRef<HTMLDivElement>(null)
@@ -58,6 +63,36 @@ export function BoardView() {
   useEffect(() => {
     if (t.tool !== 'select') setSelectedId(null)
   }, [t.tool])
+
+  // (C) Close any open text editor when switching tools or boards (don't strand an overlay).
+  useEffect(() => { setEditor(null) }, [t.tool, activeId])
+
+  // (C) Delete the selected object: mirrors the eraser path (removeObj does NOT broadcast,
+  // so sendDelete is called explicitly), then clears selection. Declared before the keydown
+  // effect that depends on it (TDZ).
+  const deleteSelected = useCallback(() => {
+    if (!selectedId) return
+    removeObj(selectedId)
+    channel.current?.sendDelete(selectedId)
+    setSelectedId(null)
+  }, [selectedId, removeObj, channel])
+
+  // (C) Delete / Backspace deletes the selected object — but NOT while editing text or any
+  // input/textarea is focused (else Backspace eats the object mid-edit). Gated two ways:
+  // the editor state being open, and document.activeElement being an editable field.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Delete' && e.key !== 'Backspace') return
+      if (editor) return // overlay open
+      const ae = document.activeElement
+      if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || (ae as HTMLElement).isContentEditable)) return
+      if (!selectedId) return
+      e.preventDefault()
+      deleteSelected()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [editor, selectedId, deleteSelected])
 
   // Reflect native fullscreen state (incl. Esc-exit and Safari's webkit-prefixed event).
   useEffect(() => {
@@ -110,15 +145,13 @@ export function BoardView() {
       return
     }
     else if (t.tool === 'text') {
-      const text = window.prompt('Text:')
-      if (text) {
-        const o = base('text', { x, y, text, color: t.color, fontSize: 20 })
-        commit(o)
-        channel.current?.sendCommit(o)
-      }
+      // (C) Open the in-place overlay at the press point (replaces window.prompt). The
+      // object is created on commit (empty ⇒ nothing). fontFamily/fontSize/color seed from
+      // the current tool state.
+      setEditor({ id: null, x, y, text: '', color: t.color, fontSize: t.fontSize, fontFamily: t.fontFamily })
       return
     } else if (t.tool === 'select') { return }
-    else { origin.current = { x, y }; draft.current = base(t.tool, shapeData(t.tool, x, y, x, y, t.color, t.size)) }
+    else { origin.current = { x, y }; draft.current = base(t.tool, shapeData(t.tool, x, y, x, y, t.color, t.size, t.dash)) } // (C) dash
     force(n => n + 1)
   }
   const move = (x: number, y: number, _info?: SlatePointerInfo) => {
@@ -133,7 +166,7 @@ export function BoardView() {
     }
     const d = draft.current; if (!d) return
     if (d.type === 'stroke') { (d.data as { points: number[] }).points.push(x, y) }
-    else if (origin.current) { d.data = shapeData(d.type, origin.current.x, origin.current.y, x, y, t.color, t.size) }
+    else if (origin.current) { d.data = shapeData(d.type, origin.current.x, origin.current.y, x, y, t.color, t.size, t.dash) } // (C) dash
     // Defer the first broadcast until the pointer has clearly moved (prevents ghost strokes
     // from a stationary tap / long-press that a parallel device would otherwise render).
     // LONGPRESS_MOVE_PX is a SCREEN-px threshold; (x,y) are world coords, so convert the
@@ -187,12 +220,45 @@ export function BoardView() {
   const hitTest = (x: number, y: number) =>
     objects.filter(o => !o.deleted).reverse().find(o => near(o, x, y))
 
-  const onTransform = (id: string, patch: Partial<BoardObject['data']>) => {
+  // (C) Patch type mirrors Canvas's onTransform exactly. `Partial<BoardObject['data']>`
+  // would collapse to the union's common keys, rejecting { text } / { dash } / { fontFamily }.
+  const onTransform = (id: string, patch: Partial<StrokeData & SegData & RectData & TextData>) => {
     const o = objects.find(x => x.id === id)
     if (!o) return
     const updated: BoardObject = { ...o, data: { ...o.data, ...patch } }
     update(updated)
     channel.current?.sendCommit(updated)
+  }
+
+  // (C) Open the overlay to re-edit an existing text object (double-click/tap in Canvas).
+  // Plain functions (not memoised) so they always close over the current objects/base/
+  // onTransform — re-edit must find the live object, and create must use the live activeId.
+  const openEditText = (id: string) => {
+    const o = objects.find(x => x.id === id)
+    if (!o || o.type !== 'text') return
+    const d = o.data as TextData
+    setEditor({ id, x: d.x, y: d.y, text: d.text, color: d.color, fontSize: d.fontSize, fontFamily: d.fontFamily ?? 'sans' })
+  }
+
+  // (C) Commit the overlay. Empty/whitespace ⇒ create nothing (new) or delete (re-edit).
+  const commitEditor = (text: string) => {
+    const ed = editor
+    setEditor(null)
+    if (!ed) return
+    const trimmed = text.trim()
+    if (ed.id) {
+      // Re-edit: empty ⇒ delete the object, else patch its text.
+      if (!trimmed) {
+        removeObj(ed.id); channel.current?.sendDelete(ed.id); setSelectedId(null)
+      } else {
+        onTransform(ed.id, { text })
+      }
+    } else if (trimmed) {
+      // New text object (matches the old `text` branch path).
+      const o = base('text', { x: ed.x, y: ed.y, text, color: ed.color, fontSize: ed.fontSize, fontFamily: ed.fontFamily })
+      commit(o)
+      channel.current?.sendCommit(o)
+    }
   }
 
   const fsOk = fullscreenSupported()
@@ -243,6 +309,52 @@ export function BoardView() {
     }
   }, [vp.scale, vp.panX, vp.panY, vp, objects, t.tool, activeId])
 
+  // (C) Dual-binding (spec §7): when a matching object is selected, the toolbar setters
+  // BOTH update useTool defaults AND live-edit the selection via onTransform. Gated by the
+  // selected object's type so e.g. fontSize never lands on a rect.
+  const selectedObj = selectedId ? objects.find(o => o.id === selectedId) : undefined
+  const selectedType = selectedObj?.type
+  const isDashable = selectedType === 'line' || selectedType === 'arrow' || selectedType === 'rect' || selectedType === 'ellipse'
+  const isTextSel = selectedType === 'text'
+
+  // Controls are shown for the active drawing tool OR a matching selected object.
+  const showLineStyle = ['line', 'arrow', 'rect', 'ellipse'].includes(t.tool) || isDashable
+  const showFontControls = t.tool === 'text' || isTextSel
+
+  const setColor = (c: string) => {
+    t.setColor(c)
+    if (selectedId) onTransform(selectedId, { color: c }) // color applies to every type
+  }
+  const setSize = (n: number) => {
+    t.setSize(n)
+    // stroke width — meaningful for everything except text (text uses fontSize)
+    if (selectedId && selectedType && selectedType !== 'text') onTransform(selectedId, { size: n })
+  }
+  const setDash = (d: import('../lib/types').DashStyle) => {
+    t.setDash(d)
+    if (selectedId && isDashable) onTransform(selectedId, { dash: d })
+  }
+  const setFontFamily = (f: import('../lib/types').FontFamilyKey) => {
+    t.setFontFamily(f)
+    if (selectedId && isTextSel) onTransform(selectedId, { fontFamily: f })
+  }
+  const setFontSize = (n: number) => {
+    const clamped = clampFontSize(n) // clamp the value we PATCH too, not just the tool default
+    t.setFontSize(clamped)
+    if (selectedId && isTextSel) onTransform(selectedId, { fontSize: clamped })
+  }
+
+  // (C) Reflect the SELECTED object's style in the toolbar so the active highlight is correct
+  // and a continuous control (stroke-width / font-size) doesn't snap the object to the stale
+  // tool default on first adjustment. Fall back to the tool state when nothing matching is
+  // selected. Type-gated: never read size off text or fontSize off a shape.
+  const sd = selectedObj?.data as Partial<StrokeData & SegData & RectData & TextData> | undefined
+  const dispColor = sd?.color ?? t.color
+  const dispSize = (selectedType && selectedType !== 'text' ? sd?.size : undefined) ?? t.size
+  const dispDash = (isDashable ? sd?.dash : undefined) ?? t.dash
+  const dispFontFamily = (isTextSel ? sd?.fontFamily : undefined) ?? t.fontFamily
+  const dispFontSize = (isTextSel ? sd?.fontSize : undefined) ?? t.fontSize
+
   const render = [...objects, ...Object.values(liveDrafts), ...(draft.current ? [draft.current] : [])]
   return (
     <div className="app" ref={appRef}>
@@ -250,7 +362,14 @@ export function BoardView() {
         <>
           <TabBar boards={boards} activeId={activeId} onSelect={setActiveId}
             onAdd={addBoard} onRename={rename} onDelete={remove} onSignOut={signOut} />
-          <Toolbar {...t} showGrid={showGrid} toggleGrid={() => setShowGrid(g => !g)}
+          <Toolbar {...t}
+            color={dispColor} size={dispSize} dash={dispDash}
+            fontFamily={dispFontFamily} fontSize={dispFontSize}
+            setColor={setColor} setSize={setSize}
+            setDash={setDash} setFontFamily={setFontFamily} setFontSize={setFontSize}
+            showLineStyle={showLineStyle} showFontControls={showFontControls}
+            hasSelection={!!selectedId} onDelete={deleteSelected}
+            showGrid={showGrid} toggleGrid={() => setShowGrid(g => !g)}
             onUndo={undo} onRedo={redo} onClear={clear}
             isFs={isFs} onToggleFullscreen={toggleFullscreen} fullscreenSupported={fsOk}
             onCollapseMenu={() => setMenuHidden(true)} />
@@ -267,6 +386,7 @@ export function BoardView() {
           selectedId={selectedId}
           onSelect={setSelectedId}
           onTransform={onTransform}
+          onEditText={openEditText} /* (C) double-click/tap a text object to re-edit */
         />
         {/* (D) Radial quick menu — sibling of the Stage, screen-space overlay, never synced. */}
         {menu && (
@@ -277,6 +397,14 @@ export function BoardView() {
             onColor={t.setColor}
             onSize={t.setSize}
             onClose={() => setMenu(null)}
+          />
+        )}
+        {editor && ( /* (C) in-place text editor, positioned via worldToScreen over .canvas-wrap */
+          <TextEditOverlay
+            state={editor}
+            viewport={vp}
+            onCommit={commitEditor}
+            onCancel={() => setEditor(null)}
           />
         )}
         {menuHidden && (
@@ -295,10 +423,14 @@ export function BoardView() {
 }
 
 // helpers — (ox,oy) is the fixed press origin; (cx,cy) is the current pointer.
-function shapeData(type: string, ox: number, oy: number, cx: number, cy: number, color: string, size: number): BoardObject['data'] {
-  if (type === 'line' || type === 'arrow') return { x1: ox, y1: oy, x2: cx, y2: cy, color, size }
+// (C) `dash` threaded through so new line/arrow/rect/ellipse objects carry the picked style.
+function shapeData(
+  type: string, ox: number, oy: number, cx: number, cy: number,
+  color: string, size: number, dash: import('../lib/types').DashStyle,
+): BoardObject['data'] {
+  if (type === 'line' || type === 'arrow') return { x1: ox, y1: oy, x2: cx, y2: cy, color, size, dash }
   const x = Math.min(ox, cx), y = Math.min(oy, cy)
-  return { x, y, w: Math.abs(cx - ox), h: Math.abs(cy - oy), color, size }
+  return { x, y, w: Math.abs(cx - ox), h: Math.abs(cy - oy), color, size, dash }
 }
 
 function near(o: BoardObject, x: number, y: number): boolean {

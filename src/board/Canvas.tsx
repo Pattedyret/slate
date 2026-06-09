@@ -3,6 +3,7 @@ import { useMemo, useRef, useEffect } from 'react'
 import Konva from 'konva'
 import type { BoardObject, StrokeData, SegData, RectData, TextData } from '../lib/types'
 import { strokeOutline } from '../lib/freehand'
+import { dashArray, fontStack } from '../lib/style' // (C)
 import type { ViewportApi } from './useViewport'
 
 // Shared with the radial-menu package (D): movement beyond this many *screen* px
@@ -106,8 +107,7 @@ export function Canvas({
   width, height, objects, showGrid, viewport,
   onPointerDown, onPointerMove, onPointerUp, onDrawCancel,
   selectable, selectedId, onSelect, onTransform,
-  // onEditText is part of the C3 contract; B declares it but does not wire it (C does).
-  onEditText: _onEditText,
+  onEditText, // (C) wired below: double-click/tap a text node re-opens the edit overlay.
 }: CanvasProps) {
   const { scale, panX, panY } = viewport
   const stageRef = useRef<Konva.Stage>(null)
@@ -130,6 +130,16 @@ export function Canvas({
     }
     layer.batchDraw()
   }, [selectedId, selectable, objects])
+
+  // (C) Konva paints text to a canvas bitmap; if a web font (marker/mono) isn't loaded
+  // before the first paint, Konva draws the fallback and never reflows. Force a redraw
+  // once fonts are ready so text nodes repaint with the correct face.
+  useEffect(() => {
+    if (typeof document === 'undefined' || !document.fonts?.ready) return
+    let alive = true
+    document.fonts.ready.then(() => { if (alive) layerRef.current?.batchDraw() })
+    return () => { alive = false }
+  }, [])
 
   // ----- Refs read by the once-bound DOM listeners (avoid stale closures) -----
   const vpRef = useRef(viewport)
@@ -384,6 +394,9 @@ export function Canvas({
                   strokeWidth={d.size}
                   pointerLength={10}
                   pointerWidth={10}
+                  dash={dashArray(d.dash, d.size)} /* (C) */
+                  lineCap={d.dash === 'dotted' ? 'round' : undefined} /* (C) round dots */
+                  lineJoin={d.dash === 'dotted' ? 'round' : undefined} /* (C) */
                   {...commonSelectProps}
                   {...dragProps}
                 />
@@ -396,6 +409,8 @@ export function Canvas({
                   stroke={d.color}
                   strokeWidth={d.size}
                   lineCap="round"
+                  lineJoin={d.dash === 'dotted' ? 'round' : undefined} /* (C) */
+                  dash={dashArray(d.dash, d.size)} /* (C) */
                   {...commonSelectProps}
                   {...dragProps}
                 />
@@ -433,6 +448,9 @@ export function Canvas({
                 height={d.h}
                 stroke={d.color}
                 strokeWidth={d.size}
+                dash={dashArray(d.dash, d.size)} /* (C) */
+                lineCap={d.dash === 'dotted' ? 'round' : undefined} /* (C) round dots */
+                lineJoin={d.dash === 'dotted' ? 'round' : undefined} /* (C) */
                 {...commonSelectProps}
                 {...dragProps}
               />
@@ -477,6 +495,9 @@ export function Canvas({
                 radiusY={Math.abs(d.h) / 2}
                 stroke={d.color}
                 strokeWidth={d.size}
+                dash={dashArray(d.dash, d.size)} /* (C) */
+                lineCap={d.dash === 'dotted' ? 'round' : undefined} /* (C) round dots */
+                lineJoin={d.dash === 'dotted' ? 'round' : undefined} /* (C) */
                 {...commonSelectProps}
                 {...dragProps}
               />
@@ -496,6 +517,16 @@ export function Canvas({
                   },
                 }
               : {}
+            // (C) Double-click/tap re-opens the edit overlay — ONLY in select mode (spec §4.2).
+            // Outside select mode the unified pointer layer is already drawing/erasing, so a
+            // dblclick must not also fire an edit. Also select the object so the overlay
+            // (positioned in BoardView) lines up with the Transformer frame.
+            const editProps = selectable
+              ? {
+                  onDblClick: () => { onSelect?.(o.id); onEditText?.(o.id) },
+                  onDblTap: () => { onSelect?.(o.id); onEditText?.(o.id) },
+                }
+              : {}
             return (
               <Text
                 key={o.id}
@@ -505,8 +536,10 @@ export function Canvas({
                 text={d.text}
                 fill={d.color}
                 fontSize={d.fontSize}
+                fontFamily={fontStack(d.fontFamily)} /* (C) */
                 {...commonSelectProps}
                 {...dragProps}
+                {...editProps}
               />
             )
           }

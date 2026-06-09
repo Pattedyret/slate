@@ -9,6 +9,25 @@
    Danger/Error   : #ff6f6f
    ============================================================ */
 
+/* ----- (C) Self-hosted web fonts -------------------------- */
+/* woff2 live in public/fonts/ → served at <base>fonts/. The base path is /slate/
+   (see vite.config.ts); Vite does NOT rewrite url() for public/ assets, so the path
+   is written with the base prefix explicitly. latin subset only (whiteboard text). */
+@font-face {
+  font-family: 'Permanent Marker';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(/slate/fonts/permanent-marker-latin.woff2) format('woff2');
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(/slate/fonts/jetbrains-mono-latin.woff2) format('woff2');
+}
+
 /* ----- Reset / Base -------------------------------------- */
 *, *::before, *::after {
   box-sizing: border-box;
@@ -74,6 +93,70 @@ html, body {
 .app canvas {
   display: block;
   touch-action: none;
+}
+
+/* ----- (C) In-place text-edit overlay -------------------- */
+/* Absolutely positioned inside .canvas-wrap (position:relative); left/top come from
+   worldToScreen so it sits exactly over the target/created text. Transparent bg so it
+   reads as WYSIWYG; auto-grows-ish via min sizing + wrapping. */
+.text-edit-overlay {
+  position: absolute;
+  z-index: 25;
+  margin: 0;
+  padding: 0;
+  border: none;
+  outline: 1px dashed var(--accent);
+  background: transparent;
+  resize: none;
+  overflow: hidden;
+  white-space: pre;
+  min-width: 40px;
+  min-height: 1.2em;
+  width: auto;
+  caret-color: var(--accent);
+  font-weight: 400;
+  /* color / fontFamily / fontSize are set inline to match the target object */
+}
+.text-edit-overlay::placeholder {
+  color: var(--text-muted);
+}
+
+/* ----- (C) Line-style + font controls -------------------- */
+.toolbar .dash-opt {
+  min-width: 30px;
+  font-family: ui-monospace, "SFMono-Regular", monospace;
+  letter-spacing: 1px;
+}
+.toolbar .font-select {
+  height: 30px;
+  padding: 0 6px;
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+  background: var(--btn-bg);
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.toolbar .font-select:hover {
+  background: var(--btn-hover);
+  color: var(--text);
+}
+.toolbar .font-size {
+  width: 52px;
+  height: 30px;
+  padding: 0 6px;
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+  background: var(--btn-bg);
+  color: var(--text);
+  font-size: 12px;
+  flex-shrink: 0;
+  text-align: center;
+}
+.toolbar button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 /* ----- Floating menu restore handle (shown when the menu is collapsed) -- */
