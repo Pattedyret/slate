@@ -11,5 +11,11 @@ dist/
 # Brainstorm companion artifacts
 .superpowers/
 
+# Test / tooling artifacts
+test-results/
+playwright-report/
+playwright/.cache/
+supabase/.temp/
+
 # OS
 .DS_Store

@@ -22,5 +22,7 @@ export default defineConfig({
       },
     }),
   ],
-  test: { environment: 'jsdom', globals: true },
+  // Vitest runs only unit tests (*.test.ts). The Playwright e2e specs (tests/e2e/*.spec.ts)
+  // are excluded so `npx vitest run` in CI never tries to load @playwright/test.
+  test: { environment: 'jsdom', globals: true, include: ['tests/**/*.test.ts'] },
 })
