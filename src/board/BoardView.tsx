@@ -26,6 +26,7 @@ export function BoardView() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const draft = useRef<BoardObject | null>(null)
   const origin = useRef<{ x: number; y: number } | null>(null)
+  const erasing = useRef(false) // true only while the pointer is held down with the eraser
   const [, force] = useState(0)
 
   useEffect(() => {
@@ -46,6 +47,7 @@ export function BoardView() {
     if (!activeId) return
     if (t.tool === 'pen') draft.current = base('stroke', { points: [x, y], color: t.color, size: t.size })
     else if (t.tool === 'eraser') {
+      erasing.current = true
       const hit = hitTest(x, y)
       if (hit) { removeObj(hit.id); channel.current?.sendDelete(hit.id) }
       return
@@ -64,6 +66,7 @@ export function BoardView() {
   }
   const move = (x: number, y: number) => {
     if (t.tool === 'eraser') {
+      if (!erasing.current) return // no hover-erase: only erase while the pointer is held down
       const hit = hitTest(x, y)
       if (hit) { removeObj(hit.id); channel.current?.sendDelete(hit.id) }
       return
@@ -75,6 +78,7 @@ export function BoardView() {
     force(n => n + 1)
   }
   const up = () => {
+    erasing.current = false
     if (draft.current) {
       const d = draft.current
       commit(d)
