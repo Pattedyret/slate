@@ -5,6 +5,7 @@ import { TabBar } from './TabBar'
 import { useTool } from './useTool'
 import { useBoardObjects } from './useBoardObjects'
 import { useBoards } from './useBoards'
+import { useElementSize } from './useElementSize'
 import { useAuth } from '../auth/AuthProvider'
 import { newId, type BoardObject, type ObjectType } from '../lib/types'
 import { type BoardChannel } from '../lib/realtime'
@@ -22,17 +23,12 @@ export function BoardView() {
   const { objects, commit, update, remove: removeObj, clear, undo, redo, channel, liveDrafts } = useBoardObjects(activeId)
   const t = useTool()
   const [showGrid, setShowGrid] = useState(true)
-  const [size, setSize] = useState({ w: window.innerWidth, h: window.innerHeight - 88 })
+  const { ref: wrapRef, size } = useElementSize<HTMLDivElement>()
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const draft = useRef<BoardObject | null>(null)
   const origin = useRef<{ x: number; y: number } | null>(null)
   const erasing = useRef(false) // true only while the pointer is held down with the eraser
   const [, force] = useState(0)
-
-  useEffect(() => {
-    const onResize = () => setSize({ w: window.innerWidth, h: window.innerHeight - 88 })
-    window.addEventListener('resize', onResize); return () => window.removeEventListener('resize', onResize)
-  }, [])
 
   // Clear selection when switching away from select tool
   useEffect(() => {
@@ -109,13 +105,15 @@ export function BoardView() {
       <Toolbar {...t} showGrid={showGrid} toggleGrid={() => setShowGrid(g => !g)}
         onUndo={undo} onRedo={redo}
         onClear={clear} onFullscreen={onFullscreen} />
-      <Canvas width={size.w} height={size.h} objects={render} showGrid={showGrid}
-        onPointerDown={down} onPointerMove={move} onPointerUp={up}
-        selectable={t.tool === 'select'}
-        selectedId={selectedId}
-        onSelect={setSelectedId}
-        onTransform={onTransform}
-      />
+      <div className="canvas-wrap" ref={wrapRef}>
+        <Canvas width={size.width} height={size.height} objects={render} showGrid={showGrid}
+          onPointerDown={down} onPointerMove={move} onPointerUp={up}
+          selectable={t.tool === 'select'}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+          onTransform={onTransform}
+        />
+      </div>
     </div>
   )
 }
