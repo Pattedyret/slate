@@ -358,6 +358,130 @@ html, body {
   box-shadow: 0 0 0 2px var(--bg);
 }
 
+/* ----- Radial quick menu (Package D) --------------------- */
+/* Full-bleed dismiss layer over the canvas; a tap outside the wheel closes it. */
+.radial-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  touch-action: none;
+}
+
+/* The wheel itself: absolutely positioned at the (clamped) press point. */
+.radial-menu {
+  position: absolute;
+  animation: radial-in 0.12s ease-out;
+  filter: drop-shadow(0 4px 16px rgba(0, 0, 0, 0.5));
+  touch-action: none;
+  user-select: none;
+}
+@keyframes radial-in {
+  from { opacity: 0; transform: scale(0.9); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+/* Tool sectors (inner ring). */
+.radial-tool path {
+  fill: rgba(31, 35, 43, 0.92);
+  stroke: var(--border);
+  stroke-width: 1;
+  cursor: pointer;
+  transition: fill 0.1s;
+}
+.radial-tool:hover path {
+  fill: var(--btn-hover);
+}
+.radial-tool.active path {
+  fill: var(--accent-bg);
+  stroke: var(--accent-dim);
+}
+.radial-glyph {
+  fill: var(--text-muted);
+  font-size: 15px;
+  pointer-events: none;
+}
+.radial-tool.active .radial-glyph {
+  fill: var(--accent);
+}
+
+/* Color segments (outer ring). */
+.radial-color {
+  cursor: pointer;
+  stroke: rgba(21, 23, 28, 0.9);
+  stroke-width: 1.5;
+  transition: opacity 0.1s;
+}
+.radial-color:hover {
+  opacity: 0.85;
+}
+.radial-color.active {
+  stroke: #fff;
+  stroke-width: 3;
+}
+
+/* Center hub — current tool; tap to dismiss. */
+.radial-hub circle {
+  fill: rgba(24, 27, 33, 0.96);
+  stroke: var(--border);
+  stroke-width: 1;
+  cursor: pointer;
+}
+.radial-hub:hover circle {
+  fill: var(--btn-hover);
+}
+.radial-hub-glyph {
+  fill: var(--text);
+  font-size: 18px;
+  font-weight: 600;
+  pointer-events: none;
+}
+
+/* Size stepper — overlaid at the bottom-center of the wheel. */
+.radial-size {
+  position: absolute;
+  left: 50%;
+  bottom: 2px;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 5px;
+  border-radius: var(--radius-pill);
+  background: var(--bar-alt);
+  border: 1px solid var(--border);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+.radial-size-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 50%;
+  background: var(--btn-bg);
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.radial-size-btn:hover:not(:disabled) {
+  background: var(--btn-hover);
+}
+.radial-size-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.radial-size-val {
+  min-width: 22px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--text);
+}
+
 /* ----- Auth / Login screen ------------------------------- */
 .login {
   display: flex;

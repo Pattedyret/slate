@@ -7,6 +7,9 @@ import { useBoardObjects } from './useBoardObjects'
 import { useBoards } from './useBoards'
 import { useElementSize } from './useElementSize'
 import { useViewport } from './useViewport'
+import { useLongPress } from './useLongPress' // (D)
+import { RadialMenu } from './RadialMenu' // (D)
+import { worldToScreen } from './viewport-math' // (D)
 import { useAuth } from '../auth/AuthProvider'
 import { newId, type BoardObject, type ObjectType } from '../lib/types'
 import { type BoardChannel } from '../lib/realtime'
@@ -34,6 +37,7 @@ export function BoardView() {
   const [showGrid, setShowGrid] = useState(true)
   const { ref: wrapRef, size } = useElementSize<HTMLDivElement>()
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null) // (D) radial menu screen point
   const [menuHidden, setMenuHidden] = useState(false)
   const [isFs, setIsFs] = useState(false)
   const appRef = useRef<HTMLDivElement>(null)
@@ -70,14 +74,32 @@ export function BoardView() {
     }
   }, [])
 
+  // (D) The radial menu is transient chrome: dismiss it on resize, window blur, or a
+  // board-tab switch (it lives in stale screen coords after any of those).
+  useEffect(() => {
+    if (!menu) return
+    const dismiss = () => setMenu(null)
+    window.addEventListener('resize', dismiss)
+    window.addEventListener('blur', dismiss)
+    return () => {
+      window.removeEventListener('resize', dismiss)
+      window.removeEventListener('blur', dismiss)
+    }
+  }, [menu])
+  // (D) Close the menu when the active board changes.
+  useEffect(() => { setMenu(null) }, [activeId])
+
   const base = (type: ObjectType, data: BoardObject['data']): BoardObject => ({
     id: newId(), board_id: activeId!, owner_id: user!.id, type, data, updated_at: new Date().toISOString(), deleted: false,
   })
 
   // Canvas delivers WORLD coords (it owns the screen→world conversion). The (x,y) draw
   // logic below is unchanged from before — it always operated in world space.
-  const down = (x: number, y: number, _info?: SlatePointerInfo) => {
+  const down = (x: number, y: number, info?: SlatePointerInfo) => {
     if (!activeId) return
+    // (D) arm the long-press detector on a single stationary pointer (screen coords).
+    const s = worldToScreen(x, y, vp)
+    lp.onDown(s.x, s.y, info?.pointerType ?? 'mouse', info?.activePointers ?? 1)
     pressStart.current = { x, y }
     moved.current = false
     if (t.tool === 'pen') draft.current = base('stroke', { points: [x, y], color: t.color, size: t.size })
@@ -100,6 +122,9 @@ export function BoardView() {
     force(n => n + 1)
   }
   const move = (x: number, y: number, _info?: SlatePointerInfo) => {
+    // (D) movement beyond tolerance cancels the long-press (it becomes a normal draw/drag).
+    const s = worldToScreen(x, y, vp)
+    lp.onMove(s.x, s.y)
     if (t.tool === 'eraser') {
       if (!erasing.current) return // no hover-erase: only erase while the pointer is held down
       const hit = hitTest(x, y)
@@ -123,6 +148,7 @@ export function BoardView() {
     force(n => n + 1)
   }
   const up = (_x?: number, _y?: number, _info?: SlatePointerInfo) => {
+    lp.onUp() // (D) clear any pending long-press timer on release
     erasing.current = false
     pressStart.current = null
     if (draft.current) {
@@ -137,13 +163,26 @@ export function BoardView() {
   // A 2nd pointer landed (pan/zoom) or a long-press claimed the gesture: discard the
   // in-progress draft WITHOUT committing or broadcasting.
   const onDrawCancel = useCallback(() => {
+    lp.cancel() // (D) a 2nd pointer / pointercancel also kills a pending long-press
     draft.current = null
     origin.current = null
     erasing.current = false
     pressStart.current = null
     moved.current = false
     force(n => n + 1)
+    // lp is a stable controller (useLongPress); safe to omit from deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // (D) Long-press → open the radial quick menu at the press SCREEN point. The detector
+  // is fed screen coords from down/move (above), so `p` is already the overlay position.
+  // Opening first discards the in-progress draft so the hold never leaves a stroke/shape.
+  const lp = useLongPress({
+    onLongPress: (p) => {
+      onDrawCancel()
+      setMenu({ x: p.x, y: p.y })
+    },
+  })
 
   const hitTest = (x: number, y: number) =>
     objects.filter(o => !o.deleted).reverse().find(o => near(o, x, y))
@@ -193,8 +232,12 @@ export function BoardView() {
           vp.panBy(next.panX ?? 0, next.panY ?? 0)
         }
       },
+      // (D) Live, non-deleted object count + the active tool — read by the radial e2e to
+      // assert "no ghost object after a long-press" and "picking a sector swaps the tool".
+      getObjectCount: () => objects.filter(o => !o.deleted).length,
+      getTool: () => t.tool,
     }
-  }, [vp.scale, vp.panX, vp.panY, vp])
+  }, [vp.scale, vp.panX, vp.panY, vp, objects, t.tool])
 
   const render = [...objects, ...Object.values(liveDrafts), ...(draft.current ? [draft.current] : [])]
   return (
@@ -221,6 +264,17 @@ export function BoardView() {
           onSelect={setSelectedId}
           onTransform={onTransform}
         />
+        {/* (D) Radial quick menu — sibling of the Stage, screen-space overlay, never synced. */}
+        {menu && (
+          <RadialMenu
+            point={menu}
+            tool={t.tool} color={t.color} size={t.size}
+            onTool={(tool) => { t.setTool(tool); setMenu(null) }}
+            onColor={t.setColor}
+            onSize={t.setSize}
+            onClose={() => setMenu(null)}
+          />
+        )}
         {menuHidden && (
           <button className="menu-handle" onClick={() => setMenuHidden(false)} aria-label="Show menu">⌄</button>
         )}
