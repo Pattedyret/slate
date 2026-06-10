@@ -236,8 +236,12 @@ export function BoardView() {
       // assert "no ghost object after a long-press" and "picking a sector swaps the tool".
       getObjectCount: () => objects.filter(o => !o.deleted).length,
       getTool: () => t.tool,
+      // Board-ready signal: boards load asynchronously (useBoards), so activeId is null for
+      // the first render(s). e2e MUST await a non-null id before drawing — otherwise down()
+      // returns at the `!activeId` guard and the gesture is silently dropped.
+      getActiveId: () => activeId,
     }
-  }, [vp.scale, vp.panX, vp.panY, vp, objects, t.tool])
+  }, [vp.scale, vp.panX, vp.panY, vp, objects, t.tool, activeId])
 
   const render = [...objects, ...Object.values(liveDrafts), ...(draft.current ? [draft.current] : [])]
   return (

@@ -19,3 +19,6 @@ supabase/.temp/
 
 # OS
 .DS_Store
+
+# Claude Code agent worktrees / scratch
+.claude/

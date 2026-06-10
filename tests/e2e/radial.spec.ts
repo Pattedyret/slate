@@ -22,6 +22,7 @@ interface SlateHook {
   getObjectCount(): number
   getTool(): string
   getViewport(): { scale: number; panX: number; panY: number }
+  getActiveId(): string | null
 }
 
 async function bootstrap(page: Page): Promise<{ admin: SupabaseClient; boardId: string; email: string }> {
@@ -46,6 +47,9 @@ async function bootstrap(page: Page): Promise<{ admin: SupabaseClient; boardId: 
   await expect(page.getByRole('button', { name: 'pen' })).toBeVisible()
   await expect(page.locator('canvas').first()).toBeVisible()
   await page.waitForFunction(() => !!(window as unknown as { __slate?: unknown }).__slate)
+  // Boards load asynchronously; wait for activeId before any gesture (down() returns early
+  // at the `!activeId` guard otherwise — both drawing AND long-press arming are gated on it).
+  await page.waitForFunction(() => !!(window as unknown as { __slate: SlateHook }).__slate.getActiveId())
 
   return { admin, boardId, email }
 }

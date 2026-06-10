@@ -42,6 +42,9 @@ async function bootstrap(page: Page) {
   await expect(page.locator('canvas').first()).toBeVisible()
   // Wait for the test hook to be installed.
   await page.waitForFunction(() => !!(window as unknown as { __slate?: unknown }).__slate)
+  // Boards load asynchronously; activeId is null for the first render(s). Drawing before it
+  // is set makes down() return at the `!activeId` guard, so wait for the board-ready signal.
+  await page.waitForFunction(() => !!(window as unknown as { __slate: { getActiveId(): string | null } }).__slate.getActiveId())
 
   return { admin, boardId }
 }
