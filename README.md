@@ -26,10 +26,27 @@ multiple boards, switched via tabs.
 
 ## Features
 
-Pen (color + size), eraser, line / rectangle / ellipse / arrow, text, select / move /
-resize, undo / redo, clear board, dotted-grid toggle, fullscreen, multiple boards as
-tabs (create / rename / delete), two-way live sync, instant email + password signup, and
-PWA install ("Add to Home Screen").
+**Drawing & shapes** — pen (colour + width), eraser (erases only while held, never on
+hover), line / rectangle / ellipse / arrow, and **dashed / dotted** styling for lines and
+shapes. **Text** is fully editable: an in-place overlay lets you set the content, font
+(sans / serif / mono / marker), and size, and double-clicking an existing label re-opens
+it. **Select** to move, resize, or delete any object.
+
+**Canvas navigation** — an independent per-device viewport: two-finger / trackpad **pan,
+pinch-zoom**, ctrl/⌘-wheel zoom-to-cursor, on-screen zoom controls, a world-space dotted
+grid, and a **fullscreen** mode that auto-hides the toolbar. The top menu also collapses
+on demand for maximum drawing space.
+
+**S Pen / touch quick menu** — a stationary **long-press** opens a radial wheel at the
+press point with all tools, the colour palette, and a size stepper, so you can swap tools
+without reaching for the toolbar.
+
+**Live sync** — drawing, **erasing, deletions, undo/redo, and clear-board** all propagate
+in real time to every device signed into the same account. Undo reverts only your own
+edits.
+
+**Boards & accounts** — multiple boards per account as tabs (create / rename / delete),
+instant email + password signup, and PWA install ("Add to Home Screen").
 
 ## Develop
 
@@ -46,8 +63,8 @@ app renders a setup screen instead of crashing.
 ## Test
 
 ```bash
-npx vitest run           # Vitest unit tests (history reducer, type round-trip)
-npx playwright test      # e2e: RLS account isolation + live draw-sync (needs .env)
+npx vitest run           # Vitest unit tests (history reducer, type round-trip, viewport math, dash/font helpers, long-press)
+npx playwright test      # e2e: RLS, live draw-sync, undo/clear sync, navigation, text editing, dashed shapes, radial menu (needs .env)
 ```
 
 The e2e tests run against the live Supabase project, creating throwaway accounts.
