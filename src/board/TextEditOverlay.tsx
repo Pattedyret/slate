@@ -38,12 +38,19 @@ export function TextEditOverlay({ state, viewport, onCommit, onCancel }: Props) 
   // Re-seed when the target object changes (open editor for a different text).
   useEffect(() => { setValue(state.text); done.current = false }, [state.id, state.x, state.y, state.text])
 
-  // Focus + select on open so typing replaces an existing label immediately.
+  // Focus + select on open so typing replaces an existing label immediately. Deferred to
+  // the next frame: the overlay opens on the pointer-DOWN of a click/tap, and focusing
+  // synchronously here lets that same click's focus resolution (pointerup landing on the
+  // canvas container) immediately blur us → an empty onBlur commit that unmounts the editor
+  // before a key is ever pressed. rAF lands the focus AFTER the opening gesture settles.
   useLayoutEffect(() => {
-    const el = ref.current
-    if (!el) return
-    el.focus()
-    el.select()
+    const id = requestAnimationFrame(() => {
+      const el = ref.current
+      if (!el) return
+      el.focus()
+      el.select()
+    })
+    return () => cancelAnimationFrame(id)
   }, [state.id, state.x, state.y])
 
   const commit = () => { if (done.current) return; done.current = true; onCommit(value) }

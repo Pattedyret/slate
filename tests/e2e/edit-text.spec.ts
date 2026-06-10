@@ -74,8 +74,11 @@ test('text is created via the overlay (with font) and re-edited via double-click
   }, { timeout: 15_000, message: 'created text should persist with fontFamily="marker"' }).toBe('marker')
 
   // 4. Re-edit: switch to select, double-click the text, replace the words, commit.
+  // Double-click INSIDE the text body, not at its exact top-left anchor (px,py): the anchor
+  // is the boundary pixel of the Konva hit box and double-clicking it is sub-pixel-flaky.
+  // A real user double-clicks on the glyphs; this offset lands squarely on them.
   await page.getByRole('button', { name: 'select', exact: true }).click()
-  await page.mouse.dblclick(px, py)
+  await page.mouse.dblclick(px + 24, py + 8)
   const overlay2 = page.locator('textarea.text-edit-overlay')
   await expect(overlay2).toBeVisible()
   await overlay2.fill('Edited Text')

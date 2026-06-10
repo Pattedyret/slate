@@ -200,17 +200,22 @@ export function Canvas({
       const type = toPointerType(e.pointerType)
       const local = toLocal(e.clientX, e.clientY)
       pointers.current.set(e.pointerId, { x: local.x, y: local.y, type })
-      // Capture so pointerup/move keep firing on this container even if the pointer leaves
-      // it — otherwise the pointers map can wedge and block subsequent draws.
-      try { container.setPointerCapture(e.pointerId) } catch { /* not capturable — ignore */ }
 
       if (pointers.current.size >= 2) {
+        // Gesture: capture so pinch/pan keeps tracking even if a finger leaves the container.
+        try { container.setPointerCapture(e.pointerId) } catch { /* not capturable — ignore */ }
         beginGesture()
         return
       }
-      // Single pointer. In select mode, let Konva handle node-drag/Transformer/hit-tests —
-      // do NOT emit a draw event. Background-deselect is handled by the Stage onMouseDown.
+      // Single pointer. In select mode, let Konva own node-drag/Transformer/hit-tests AND
+      // click/dbl-click (re-edit text) — do NOT capture (pointer capture retargets the pointer
+      // and its compat mouse events to the container, so Konva can no longer dispatch a
+      // dblclick to the child node) and do NOT emit a draw event. Background-deselect is
+      // handled by the Stage onMouseDown.
       if (gestureActive.current || selectableRef.current) return
+      // Drawing: capture so pointerup/move keep firing even if the pointer leaves the
+      // container (otherwise the pointers map can wedge and block subsequent draws).
+      try { container.setPointerCapture(e.pointerId) } catch { /* not capturable — ignore */ }
       cbRef.current.onPointerDown?.(toWorld(e.clientX, e.clientY), info(e.pointerId, type))
     }
 
